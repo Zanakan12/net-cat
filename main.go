@@ -295,7 +295,7 @@ func main() {
 	if *protocol != string(TCP) && *protocol != string(UDP) {
 		log.Fatalf("Invalid protocol: %s. Use 'tcp' or 'udp'.", *protocol)
 	}
-		if len(args) > 0{
+		if len(args) == 1{
 			port = args[0]
 		}
 		
