@@ -228,28 +228,68 @@ func (s *Server) sendMessagesToClient(client *Client) {
 func (s *Server) receiveMessagesFromClient(client *Client) {
 	buf := make([]byte, 1024)
 	for {
-		// Read message from client
 		n, err := client.Conn.Read(buf)
 		if err != nil {
 			return
 		}
 
-		message := string(buf[:n])
+		message := strings.TrimSpace(string(buf[:n]))
+
+		// Gestion de la commande de changement de nom
+		if strings.HasPrefix(message, "/rename ") {
+			newName := strings.TrimSpace(strings.TrimPrefix(message, "/rename "))
+			if newName == "" {
+				client.Conn.Write([]byte("Le nouveau nom est invalide.\n"))
+				continue
+			}
+
+			// Verrouillage pour éviter des conflits de nom pendant le changement
+			s.ClientsLock.Lock()
+
+			// Vérifier si le nom est déjà utilisé
+			if _, exists := s.Clients[newName]; exists {
+				client.Conn.Write([]byte("Ce nom est déjà pris.\n"))
+				s.ClientsLock.Unlock()
+				continue
+			}
+
+			// Sauvegarder l'ancien nom et changer le nom du client
+			oldName := client.Username
+			delete(s.Clients, oldName)  // Retirer l'ancien nom de la liste des clients
+			client.Username = newName    // Mettre à jour le nom du client
+			s.Clients[newName] = client  // Ajouter le client sous son nouveau nom
+
+			// Libérer le verrou
+			s.ClientsLock.Unlock()
+
+			// Diffuser le message de changement de nom à tous les clients
+			s.broadcast(fmt.Sprintf("[INFO]: %s a changé son nom pour %s\n", oldName, newName), "INFO")
+
+			// Journaliser le changement de nom
+			s.logActivity(fmt.Sprintf("Client %s a changé son nom pour %s", oldName, newName))
+
+			continue
+		}
+
+		// Si le message est "/exit", déconnexion du client
 		if message == "/exit" {
 			return
 		}
 
-		// Log the message and broadcast it to other clients
+		// Traitement normal du message
 		timestamp := time.Now()
 		msg := Message{Timestamp: timestamp, Client: client.Username, Content: message}
 		s.MsgLock.Lock()
 		s.Messages = append(s.Messages, msg)
 		s.MsgLock.Unlock()
 
+		// Diffuser le message à tous les clients
 		formattedMsg := fmt.Sprintf("[%s][%s]: %s\n", timestamp.Format("2006-01-02 15:04:05"), client.Username, message)
 		s.broadcast(formattedMsg, client.Username)
 	}
 }
+
+
 
 // broadcast sends a message to all clients except the sender
 func (s *Server) broadcast(message, sender string) {
