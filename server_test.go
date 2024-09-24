@@ -7,7 +7,7 @@ import (
 )
 
 func TestServerStart(t *testing.T) {
-	server := NewServer("9999")
+	server := NewServer("tcp","8989")
 	go server.Start()
 	time.Sleep(time.Second) // Allow server to start
 
@@ -19,7 +19,7 @@ func TestServerStart(t *testing.T) {
 }
 
 func TestBroadcast(t *testing.T) {
-	server := NewServer("9999")
+	server := NewServer("tcp","8989")
 	client1 := &Client{
 		Username: "Alice",
 		Out:      make(chan string, 10),
@@ -52,7 +52,7 @@ func TestBroadcast(t *testing.T) {
 }
 
 func TestClientJoinLeave(t *testing.T) {
-	server := NewServer("9999")
+	server := NewServer("tcp","8989")
 
 	// Simulate client join
 	client := &Client{

@@ -300,7 +300,7 @@ func main() {
 		}
 		
 	// Start the server if the -l flag is set
-	if *listen || len(flag.Args())==0{
+	if *listen || len(flag.Args())==0 || port != DefaultPort{ 
 		 // Use the first argument as the port if provided
 		server := NewServer(Protocol(*protocol), port)
 		server.Start()
