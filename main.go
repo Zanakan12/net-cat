@@ -15,7 +15,8 @@ const (
 	DefaultPort = "8989"
 	MaxClients  = 10
 	LogFile     = "server.log"
-	LinuxLogo   = `
+	// LinuxLogo is sent to clients upon connection
+	LinuxLogo = `
           .--.
          |o_o |
          |:_/ |
@@ -34,20 +35,24 @@ const (
 )
 
 // Message struct to hold message details
+// A message consists of a timestamp, the client who sent it, and the content of the message.
 type Message struct {
 	Timestamp time.Time
 	Client    string
 	Content   string
 }
 
-// Client struct to represent connected clients
+// Client struct represents connected clients
+// A client has a connection (Conn), a username, and a channel for outgoing messages (Out).
 type Client struct {
 	Conn     net.Conn
 	Username string
 	Out      chan string
 }
 
-// Server struct to hold server state
+// Server struct holds the server state
+// This struct contains information about the protocol (TCP/UDP), the port it's listening on,
+// the connected clients, chat messages, and mutexes to handle concurrency.
 type Server struct {
 	Protocol    Protocol
 	Port        string
@@ -58,6 +63,8 @@ type Server struct {
 	LogFile     *os.File
 }
 
+// NewServer creates a new server instance
+// It initializes the log file and sets up the server with the chosen protocol and port.
 func NewServer(protocol Protocol, port string) *Server {
 	file, err := os.OpenFile(LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
@@ -73,6 +80,7 @@ func NewServer(protocol Protocol, port string) *Server {
 	}
 }
 
+// Start initiates the server based on the protocol (TCP or UDP)
 func (s *Server) Start() {
 	if s.Protocol == UDP {
 		s.startUDP()
@@ -81,6 +89,7 @@ func (s *Server) Start() {
 	}
 }
 
+// startTCP starts a TCP server, accepts incoming connections and handles each client in a new goroutine
 func (s *Server) startTCP() {
 	listener, err := net.Listen(string(TCP), ":"+s.Port)
 	if err != nil {
@@ -90,6 +99,7 @@ func (s *Server) startTCP() {
 	log.Printf("Listening on port %s with TCP", s.Port)
 
 	for {
+		// If the maximum number of clients is reached, reject new connections
 		if len(s.Clients) >= MaxClients {
 			log.Println("Max clients connected. Rejecting new connection.")
 			conn, err := listener.Accept()
@@ -106,10 +116,12 @@ func (s *Server) startTCP() {
 			continue
 		}
 
+		// Handle each client in a new goroutine
 		go s.handleClient(conn)
 	}
 }
 
+// startUDP starts a UDP server, listens for incoming messages, and prints the message along with the sender's address
 func (s *Server) startUDP() {
 	udpAddr, err := net.ResolveUDPAddr(string(UDP), ":"+s.Port)
 	if err != nil {
@@ -126,6 +138,7 @@ func (s *Server) startUDP() {
 
 	buf := make([]byte, 1024)
 	for {
+		// Read incoming UDP messages and print them along with the sender's address
 		n, addr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			log.Printf("Error reading UDP data: %v", err)
@@ -134,15 +147,18 @@ func (s *Server) startUDP() {
 
 		message := string(buf[:n])
 		fmt.Printf("[%s]: %s\n", addr, message)
-		// Optionally, you can handle the message in a more advanced way here
 	}
 }
 
+// handleClient manages the interaction with a newly connected TCP client
 func (s *Server) handleClient(conn net.Conn) {
 	defer conn.Close()
 
+	// Send Linux logo to the client
 	conn.Write([]byte(LinuxLogo))
 	conn.Write([]byte("Enter your name: "))
+
+	// Read the username from the client
 	buf := make([]byte, 1024)
 	n, err := conn.Read(buf)
 	if err != nil {
@@ -155,12 +171,14 @@ func (s *Server) handleClient(conn net.Conn) {
 		return
 	}
 
+	// Create a new client object
 	client := &Client{
 		Conn:     conn,
 		Username: username,
 		Out:      make(chan string),
 	}
 
+	// Add client to the server's client map
 	s.ClientsLock.Lock()
 	if _, exists := s.Clients[username]; exists {
 		s.ClientsLock.Unlock()
@@ -170,19 +188,24 @@ func (s *Server) handleClient(conn net.Conn) {
 	s.Clients[username] = client
 	s.ClientsLock.Unlock()
 
+	// Log the new client connection and broadcast a message to other clients
 	s.logActivity(fmt.Sprintf("Client %s joined.", username))
 	s.broadcast(fmt.Sprintf("[INFO]: %s joined the chat\n", username), "INFO")
 
-	// Send previous messages to new client
+	// Send previous chat messages to the new client
 	s.MsgLock.Lock()
 	for _, msg := range s.Messages {
 		conn.Write([]byte(fmt.Sprintf("[%s][%s]: %s\n", msg.Timestamp.Format("2006-01-02 15:04:05"), msg.Client, msg.Content)))
 	}
 	s.MsgLock.Unlock()
 
+	// Start goroutine to send messages to the client
 	go s.sendMessagesToClient(client)
+
+	// Receive messages from the client
 	s.receiveMessagesFromClient(client)
 
+	// Once the client disconnects, remove them from the client list and notify others
 	s.ClientsLock.Lock()
 	delete(s.Clients, username)
 	s.ClientsLock.Unlock()
@@ -191,6 +214,7 @@ func (s *Server) handleClient(conn net.Conn) {
 	s.logActivity(fmt.Sprintf("Client %s left.", username))
 }
 
+// sendMessagesToClient sends messages to a specific client
 func (s *Server) sendMessagesToClient(client *Client) {
 	for msg := range client.Out {
 		_, err := client.Conn.Write([]byte(msg))
@@ -200,9 +224,11 @@ func (s *Server) sendMessagesToClient(client *Client) {
 	}
 }
 
+// receiveMessagesFromClient listens for incoming messages from a client and broadcasts them to others
 func (s *Server) receiveMessagesFromClient(client *Client) {
 	buf := make([]byte, 1024)
 	for {
+		// Read message from client
 		n, err := client.Conn.Read(buf)
 		if err != nil {
 			return
@@ -213,6 +239,7 @@ func (s *Server) receiveMessagesFromClient(client *Client) {
 			return
 		}
 
+		// Log the message and broadcast it to other clients
 		timestamp := time.Now()
 		msg := Message{Timestamp: timestamp, Client: client.Username, Content: message}
 		s.MsgLock.Lock()
@@ -224,6 +251,7 @@ func (s *Server) receiveMessagesFromClient(client *Client) {
 	}
 }
 
+// broadcast sends a message to all clients except the sender
 func (s *Server) broadcast(message, sender string) {
 	s.ClientsLock.Lock()
 	defer s.ClientsLock.Unlock()
@@ -240,27 +268,44 @@ func (s *Server) broadcast(message, sender string) {
 	}
 }
 
+// logActivity logs activities to the server's log file
 func (s *Server) logActivity(activity string) {
 	log.Println(activity)
 	s.LogFile.WriteString(activity + "\n")
 }
 
 func main() {
-	// Define the flags
 	listen := flag.Bool("l", false, "Listen for incoming connections")
+
+	// Parse the flags
+	flag.Parse()
+
+	// Set default port
+	port := DefaultPort
+
+	// Check if any arguments (port) are provided after flags
+	args := flag.Args()
+
 	protocol := flag.String("u", string(TCP), "Choose between tcp or udp")
-	port := flag.String("p", DefaultPort, "Specify the port to use")
+	
 
 	flag.Parse()
 
+	// Validate the protocol flag
 	if *protocol != string(TCP) && *protocol != string(UDP) {
 		log.Fatalf("Invalid protocol: %s. Use 'tcp' or 'udp'.", *protocol)
 	}
-
-	if *listen {
-		server := NewServer(Protocol(*protocol), *port)
+		if len(args) > 0{
+			port = args[0]
+		}
+		
+	// Start the server if the -l flag is set
+	if *listen || len(flag.Args())==0{
+		 // Use the first argument as the port if provided
+		server := NewServer(Protocol(*protocol), port)
 		server.Start()
 	} else {
-		fmt.Println("[USAGE]: ./TCPChat -l -p <port> -u <tcp|udp>")
+		// If the -l flag is not set, display the usage message
+		fmt.Println("[USAGE 1]: ./TCPChat -l -p <port> -u <tcp|udp>\n[USAGE 2]: ./TCPChat $port\n[USAGE 3]: ./TCPChat")
 	}
 }
