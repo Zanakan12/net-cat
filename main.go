@@ -13,7 +13,7 @@ import (
 
 const (
 	DefaultPort = "8989"
-	MaxClients  = 10
+	MaxClients  = 2
 	LogFile     = "server.log"
 	// LinuxLogo is sent to clients upon connection
 	LinuxLogo = `
@@ -100,7 +100,7 @@ func (s *Server) startTCP() {
 
 	for {
 		// If the maximum number of clients is reached, reject new connections
-		if len(s.Clients) >= MaxClients {
+		if len(s.Clients) >= MaxClients-1 {
 			log.Println("Max clients connected. Rejecting new connection.")
 			conn, err := listener.Accept()
 			if err == nil {
@@ -235,39 +235,37 @@ func (s *Server) receiveMessagesFromClient(client *Client) {
 
 		message := strings.TrimSpace(string(buf[:n]))
 
-		// Gestion de la commande de changement de nom
-		if strings.HasPrefix(message, "/rename ") {
-			newName := strings.TrimSpace(strings.TrimPrefix(message, "/rename "))
+		// Si le message est une commande de changement de nom
+		if strings.HasPrefix(message, "/name ") {
+			newName := strings.TrimSpace(strings.TrimPrefix(message, "/name "))
 			if newName == "" {
 				client.Conn.Write([]byte("Le nouveau nom est invalide.\n"))
 				continue
 			}
 
-			// Verrouillage pour éviter des conflits de nom pendant le changement
+			// Verrouillage pour s'assurer que le changement de nom est sécurisé
 			s.ClientsLock.Lock()
 
-			// Vérifier si le nom est déjà utilisé
+			// Vérification si le nouveau nom existe déjà
 			if _, exists := s.Clients[newName]; exists {
 				client.Conn.Write([]byte("Ce nom est déjà pris.\n"))
 				s.ClientsLock.Unlock()
 				continue
 			}
 
-			// Sauvegarder l'ancien nom et changer le nom du client
+			// Informer les autres clients du changement de nom
 			oldName := client.Username
-			delete(s.Clients, oldName)  // Retirer l'ancien nom de la liste des clients
-			client.Username = newName    // Mettre à jour le nom du client
-			s.Clients[newName] = client  // Ajouter le client sous son nouveau nom
+			delete(s.Clients, client.Username) // Supprimer l'ancien nom
+			client.Username = newName          // Mettre à jour le nom
+			s.Clients[newName] = client        // Ajouter le nouveau nom
 
-			// Libérer le verrou
-			s.ClientsLock.Unlock()
-
-			// Diffuser le message de changement de nom à tous les clients
+			// Diffusion de la notification de changement de nom
 			s.broadcast(fmt.Sprintf("[INFO]: %s a changé son nom pour %s\n", oldName, newName), "INFO")
 
-			// Journaliser le changement de nom
+			// Journaliser l'activité
 			s.logActivity(fmt.Sprintf("Client %s a changé son nom pour %s", oldName, newName))
 
+			s.ClientsLock.Unlock()
 			continue
 		}
 
@@ -276,19 +274,17 @@ func (s *Server) receiveMessagesFromClient(client *Client) {
 			return
 		}
 
-		// Traitement normal du message
+		// Si c'est un message normal, traitement classique
 		timestamp := time.Now()
 		msg := Message{Timestamp: timestamp, Client: client.Username, Content: message}
 		s.MsgLock.Lock()
 		s.Messages = append(s.Messages, msg)
 		s.MsgLock.Unlock()
 
-		// Diffuser le message à tous les clients
 		formattedMsg := fmt.Sprintf("[%s][%s]: %s\n", timestamp.Format("2006-01-02 15:04:05"), client.Username, message)
 		s.broadcast(formattedMsg, client.Username)
 	}
 }
-
 
 
 // broadcast sends a message to all clients except the sender

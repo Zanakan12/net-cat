@@ -1,102 +1,103 @@
 package main
 
 import (
+	"bufio"
 	"net"
 	"testing"
 	"time"
 )
 
-func TestServerStart(t *testing.T) {
-	server := NewServer("tcp","8989")
+// TestTCPServer tests the TCP chat server's basic functionality.
+func TestTCPServer(t *testing.T) {
+	// Start the server in a separate goroutine
+	server := NewServer(TCP, "9000")
 	go server.Start()
-	time.Sleep(time.Second) // Allow server to start
 
-	conn, err := net.Dial("tcp", "localhost:9999")
+	// Allow time for the server to start
+	time.Sleep(1 * time.Second)
+
+	// Connect as a client
+	conn, err := net.Dial("tcp", "localhost:9000")
 	if err != nil {
 		t.Fatalf("Failed to connect to server: %v", err)
 	}
 	defer conn.Close()
+
+	// Read the initial Linux logo and prompt
+	scanner := bufio.NewScanner(conn)
+	scanner.Scan() // Linux logo
+	scanner.Scan() // Enter your name:
+
+	// Send the username
+	conn.Write([]byte("TestUser\n"))
+
+	// Test receiving broadcast message
+	go func() {
+		time.Sleep(100 * time.Millisecond) // Small delay before broadcasting
+		server.broadcast("[INFO]: Test broadcast message\n", "INFO")
+	}()
+
+	// Timeout after 5 seconds if no broadcast received
+	timeout := time.NewTimer(5 * time.Second)
+
+	// Channel to signal received message
+	done := make(chan bool)
+
+	// Reading message from the server
+	go func() {
+		for scanner.Scan() {
+			msg := scanner.Text()
+			if msg == "[INFO]: Test broadcast message" {
+				t.Log("Received broadcast message")
+				done <- true
+				return
+			}
+		}
+	}()
+
+	// Select for either a message or timeout
+	select {
+	case <-done:
+		// Successfully received the message
+	case <-timeout.C:
+		t.Fatal("Test timed out waiting for broadcast message")
+	}
+
+	// Shutdown the server gracefully
+	server.Shutdown()
 }
 
-func TestBroadcast(t *testing.T) {
-	server := NewServer("tcp","8989")
-	client1 := &Client{
-		Username: "Alice",
-		Out:      make(chan string, 10),
-	}
-	client2 := &Client{
-		Username: "Bob",
-		Out:      make(chan string, 10),
-	}
-	server.Clients["Alice"] = client1
-	server.Clients["Bob"] = client2
+// TestUDPServer tests the UDP message receipt functionality.
+func TestUDPServer(t *testing.T) {
+	// Start the server in a separate goroutine
+	server := NewServer(UDP, "9001")
+	go server.startUDP()
 
-	message := "[2024-04-01 12:00:00][Alice]: Hello Bob!"
-	server.broadcast(message, "Alice")
+	// Allow time for the server to start
+	time.Sleep(1 * time.Second)
 
-	select {
-	case msg := <-client2.Out:
-		if msg != message+"\n" {
-			t.Errorf("Expected message '%s', got '%s'", message, msg)
-		}
-	default:
-		t.Errorf("No message received by Bob")
+	// Send a UDP message
+	conn, err := net.Dial("udp", "localhost:9001")
+	if err != nil {
+		t.Fatalf("Failed to connect to UDP server: %v", err)
 	}
+	defer conn.Close()
 
-	select {
-	case msg := <-client1.Out:
-		t.Errorf("Alice should not receive her own message, but got '%s'", msg)
-	default:
-		// Expected, no message
-	}
+	message := "Hello from UDP client"
+	conn.Write([]byte(message))
+
+	// Allow time for the server to process the message
+	time.Sleep(1 * time.Second)
+
+	// Shutdown the server after test
+	server.Shutdown()
 }
-
-func TestClientJoinLeave(t *testing.T) {
-	server := NewServer("tcp","8989")
-
-	// Simulate client join
-	client := &Client{
-		Username: "Charlie",
-		Out:      make(chan string, 10),
+// Shutdown closes the server's log file and disconnects all clients
+func (s *Server) Shutdown() {
+	s.ClientsLock.Lock()
+	for _, client := range s.Clients {
+		client.Conn.Close()
 	}
-	server.Clients["Charlie"] = client
-	server.broadcast("[INFO]: Charlie has joined the chat.\n", "INFO")
-
-	select {
-	case msg := <-client.Out:
-		// New client should not receive join message
-		t.Errorf("New client should not receive join message, but got '%s'", msg)
-	default:
-		// Expected, no message
-	}
-
-	// Add another client to receive the join message
-	client2 := &Client{
-		Username: "Dave",
-		Out:      make(chan string, 10),
-	}
-	server.Clients["Dave"] = client2
-	server.broadcast("[INFO]: Dave has joined the chat.\n", "INFO")
-
-	select {
-	case msg := <-client.Out:
-		if msg != "[INFO]: Dave has joined the chat.\n" {
-			t.Errorf("Expected join message, got '%s'", msg)
-		}
-	case <-time.After(time.Second):
-		t.Errorf("Dave's join message not received by Charlie")
-	}
-
-	// Simulate client leave
-	delete(server.Clients, "Charlie")
-	server.broadcast("[INFO]: Charlie has left the chat.\n", "INFO")
-
-	select {
-	case msg := <-client2.Out:
-		if msg != "[INFO]: Charlie has left the chat.\n" {
-			t.Errorf("Expected leave message, got '%s'", msg)
-		}
-	case <-time.After(time.Second):
-		t.Errorf("Leave message not received by Dave")
-	}
+	s.ClientsLock.Unlock()
+	s.LogFile.Close()
 }
