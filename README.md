@@ -144,5 +144,5 @@ This project is open-sourced under the MIT License.
 
 ## Authors
 
-- Developed by [DJIHADI RAFTANDJANI AND YANIS B..]
+- Developed by [DJIHADI RAFTANDJANI AND YANIS Bellahouel..]
 - Open for contributions and improvements.
