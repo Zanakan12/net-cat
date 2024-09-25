@@ -3,129 +3,115 @@
 
 ## Introduction
 
-**TCPChat** is a network chat application written in Go that replicates basic functionality of the famous `NetCat` utility in a server-client architecture. The server listens for multiple client connections over TCP and facilitates group chat communication among clients. It supports features such as message broadcasting, client join/leave notifications, and message history sharing.
+**TCPChat** is a Go-based network chat server that replicates basic functionality of `NetCat` for group chat communication. This application uses a server-client architecture and supports multiple clients connected over TCP. Clients can send and receive messages in real-time, change their usernames, and exit the chat.
 
 ## Features
 
-- **TCP connection**: Server listens for multiple client connections and handles communications over TCP.
-- **Client naming**: Clients are required to provide a unique name upon joining.
-- **Message broadcasting**: Messages sent by clients are broadcast to all other clients.
-- **Chat history**: When a new client joins, they receive all previous messages in the chat.
-- **Join/Leave notifications**: All clients are informed when a new client joins or an existing client leaves.
-- **Timestamped messages**: Messages are timestamped and identified by the client's username.
-- **Concurrency**: Utilizes Go's goroutines and synchronization mechanisms for handling multiple clients.
-- **Maximum connections**: Server supports up to 10 concurrent clients.
+- **Multiple Clients Support**: Supports up to 10 concurrent clients.
+- **TCP & UDP Support**: The server can be started in either TCP or UDP mode.
+- **Client Naming**: Clients must provide a unique username when joining the server.
+- **Message Broadcasting**: Messages sent by clients are broadcast to all connected clients.
+- **Chat History**: New clients receive all previous messages when they join the chat.
+- **Name Change**: Clients can change their username using `/name <newname>`.
+- **Join/Leave Notifications**: All clients are notified when someone joins or leaves.
+- **Concurrency**: Utilizes Go’s goroutines and synchronization mechanisms to handle multiple clients concurrently.
+- **Graceful Shutdown**: Server resources are cleaned up upon shutdown.
 
 ## Requirements
 
 - Go 1.16 or later.
-- Internet connection (for distributed clients).
-- Compatible OS: Windows, Linux, macOS.
-
-## Allowed Packages
-
-The following Go packages are used in this project:
-
-- `io`
-- `log`
-- `os`
-- `fmt`
-- `net`
-- `sync`
-- `time`
-- `bufio`
-- `errors`
-- `strings`
-- `reflect`
+- Internet connection for distributed clients.
+- Supported OS: Windows, Linux, macOS.
 
 ## Project Structure
 
 ```
-TCPChat/
-├── client/
-│   └── client.go
-├── server/
-│   └── server.go
-├── README.md
+.
+├── main.go          # Main server code
+├── server_test.go   # Test code for TCP and UDP servers
+├── README.md        # This README file
 ```
 
-- **client/client.go**: Client-side implementation to connect, send, and receive messages.
-- **server/server.go**: Server-side implementation to manage multiple clients, broadcast messages, and handle chat history.
+## Installation and Setup
 
-## Usage Instructions
+### 1. Build the Project
 
-1. **Starting the Server**:
+To build the project, run the following command:
 
-   Navigate to the server directory and run the following command:
+```bash
+go build -o TCPchat main.go
+```
 
-   ```bash
-   go run server.go
-   ```
+### 2. Starting the Server
 
-   **Optional**: To start the server on a different port, specify the port as an argument:
+To run the TCP or UDP chat server, use one of the following commands:
 
-   ```bash
-   go run server.go <port>
-   ```
+#### TCP Mode
+```bash
+./TCPchat -l -u tcp
+```
 
-   For example, to run the server on port `2525`, use:
+#### UDP Mode
+```bash
+./TCPchat -l -u udp
+```
 
-   ```bash
-   go run server.go 2525
-   ```
+You can specify a different port by passing it as an argument:
+```bash
+./TCPchat -l -u tcp 9000
+```
 
-2. **Connecting Clients**:
+### 3. Connecting Clients
 
-   Open a new terminal window for each client and run the client program from the client directory:
+Clients can connect using `telnet` or `netcat`:
 
-   ```bash
-   go run client.go
-   ```
+#### Using Telnet
+```bash
+telnet localhost 8989
+```
 
-   **Optional**: Specify a different port if the server is running on a non-default port:
+#### Using NetCat
+```bash
+nc localhost 8989
+```
 
-   ```bash
-   go run client.go <port>
-   ```
+## Commands
 
-3. **Using `nc`**:
+### Changing Username
 
-   You can use `nc` (NetCat) to connect to the TCPChat server:
+A client can change their username by sending the following command:
+```
+/name <newname>
+```
 
-   ```bash
-   nc <server_ip> <port>
-   ```
+### Exiting the Chat
 
-## Features Walkthrough
-
-- Upon connection, the server sends a Linux logo and prompts the client for a name.
-- When a client sends a message, it is timestamped and broadcast to all connected clients.
-- When a new client joins, they receive the chat history, and the other clients are notified of the new joiner.
-- When a client leaves, the remaining clients are notified.
-- Clients can send messages in real-time, and all clients receive messages sent by other participants.
+A client can exit the chat by sending:
+```
+/exit
+```
 
 ## Testing
 
-To run tests, navigate to the server directory and use the `go test` command:
+Run tests to ensure the server functions correctly by executing:
 
 ```bash
-cd server
 go test
 ```
 
+This will run the test cases defined in the `server_test.go` file.
+
 ## Example Session
 
-**Starting the Server on Port 8989**:
-
+### Starting the Server on Port 8989:
 ```bash
-$ go run server.go
-Listening on the port :8989
+$ ./TCPchat -l -u tcp
+Listening on port :8989
 ```
 
-**Starting a Client**:
-
+### Starting a Client:
 ```bash
-$ go run client.go
+$ telnet localhost 8989
           .--.
          |o_o |
          |:_/ |
@@ -137,10 +123,9 @@ Enter your name: Alice
 [INFO]: Alice has joined the chat.
 ```
 
-**Another Client Joins**:
-
+### Another Client Joins:
 ```bash
-$ go run client.go
+$ telnet localhost 8989
           .--.
          |o_o |
          |:_/ |
