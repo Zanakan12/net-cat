@@ -92,12 +92,3 @@ func TestUDPServer(t *testing.T) {
 	// Shutdown the server after test
 	server.Shutdown()
 }
-// Shutdown closes the server's log file and disconnects all clients
-func (s *Server) Shutdown() {
-	s.ClientsLock.Lock()
-	for _, client := range s.Clients {
-		client.Conn.Close()
-	}
-	s.ClientsLock.Unlock()
-	s.LogFile.Close()
-}
